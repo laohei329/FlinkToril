@@ -2,11 +2,12 @@ package com.sun.processtime
 
 import com.sun.apitest.SourceReading
 import org.apache.flink.streaming.api.TimeCharacteristic
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala._
+import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.table.api.scala._
 import org.apache.flink.table.api.{DataTypes, Table}
 import org.apache.flink.table.descriptors.{Csv, FileSystem, Schema}
-import org.apache.flink.types.Row
 
 /**
  * @author ：sun
@@ -27,13 +28,15 @@ object ProcessingTimeTest {
       val strs: Array[String] = data.split(",")
       SourceReading(strs(0), strs(1).toLong, strs(2).toDouble)
     }
-    )
+    ).assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor[SourceReading](Time.seconds(1)) {
+      override def extractTimestamp(element: SourceReading) = element.timestamp*1000L
+    })
 
 
     //方法一
     val resultTable: Table = tableEnv.fromDataStream(sourceDS, 'id, 'timestamp as ('ts), 'temperature, 'pt.proctime)
       .select('id, 'ts, 'temperature, 'pt)
-    resultTable.toAppendStream[Row].print("processTest")
+    //resultTable.toAppendStream[Row].print("processTest")
     //方法二  定义schema的时候制定
     tableEnv.connect(
       new FileSystem().path(path)
@@ -44,9 +47,10 @@ object ProcessingTimeTest {
         .field("temp" , DataTypes.DOUBLE())
         .field("pt", DataTypes.TIMESTAMP(3)).proctime()
       ).createTemporaryTable("inPutTable")
-    //tableEnv.from("inPutTable").toAppendStream[Row].print()
-    val resultTable3: Table = tableEnv.from("inPutTable").select('id,'ts,'temp)
-    //resultTable3.toAppendStream[Row].print()
+    //todo 这里添加的
+    val resultTable3: Table = tableEnv.from("inPutTable")
+    resultTable3.printSchema()
+   //resultTable3.toAppendStream[Row].print()
 
     //ddl中定义
     env.execute("process time")
